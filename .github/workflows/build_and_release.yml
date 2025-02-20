@@ -1,0 +1,104 @@
+name: Build and Release Neovim and Ranger
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build_nvim:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-24.04
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Build and package Neovim
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          ubuntu:20.04 /bin/bash -c "./install_nvim --targz"
+
+      - name: Upload Neovim package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvim-package-${{ matrix.arch }}
+          path: nvim_release_*_${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  build_ranger:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-24.04
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Build and package Ranger
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          ubuntu:20.04 /bin/bash -c "./install_ranger --targz"
+
+      - name: Upload Ranger package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranger-package-${{ matrix.arch }}
+          path: ranger_release_*_${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build_nvim, build_ranger]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Neovim packages (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: nvim-package-x86_64
+          path: ./x86_64/
+      - name: Download Neovim packages (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: nvim-package-aarch64
+          path: ./aarch64/
+      - name: Download Ranger packages (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: ranger-package-x86_64
+          path: ./x86_64/
+      - name: Download Ranger packages (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: ranger-package-aarch64
+          path: ./aarch64/
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./x86_64/nvim_release_*_x86_64.tar.gz
+            ./aarch64/nvim_release_*_aarch64.tar.gz
+            ./x86_64/ranger_release_*_x86_64.tar.gz
+            ./aarch64/ranger_release_*_aarch64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
