@@ -70,7 +70,7 @@ if [ "$PACKAGE_MODE" = "targz" ]; then
     rm -rf "$STAGING_DIR"
     mkdir -p "$STAGING_DIR"
     # Install to staging directory (files go under STAGING_DIR/usr/local)
-    python3 setup.py install --root="$STAGING_DIR" --optimize=1
+    make install DESTDIR="$STAGING_DIR"
     # Create package directory with desired top-level folder structure
     PKG_DIR="$(pwd)/$ARCH_DIR"
     rm -rf "$PKG_DIR"
