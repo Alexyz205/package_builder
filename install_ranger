@@ -1,0 +1,89 @@
+#!/bin/bash
+set -e
+
+# Parse optional argument
+PACKAGE_MODE=install
+if [ "$1" == "--targz" ]; then
+    PACKAGE_MODE=targz
+fi
+
+# Detect system architecture
+ARCH=$(uname -m)
+if [ "$ARCH" == "x86_64" ]; then
+    ARCH_DIR="ranger-linux-x64"
+elif [ "$ARCH" == "aarch64" ]; then
+    ARCH_DIR="ranger-linux-arm64"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+# Check package manager
+if command -v apt-get &> /dev/null; then
+    PACKAGE_MANAGER="apt-get"
+elif command -v brew &> /dev/null; then
+    PACKAGE_MANAGER="brew"
+else
+    echo "No supported package manager found. Please install required dependencies manually."
+    exit 1
+fi
+
+# Check for sudo.
+if command -v sudo &> /dev/null; then
+    SUDO="sudo"
+else
+    SUDO=""
+fi
+
+dependencies=(curl tar git python3 python3-pip)
+echo "Installing dependencies..."
+for dep in "${dependencies[@]}"; do
+    echo "Installing $dep..."
+    if [ "$PACKAGE_MANAGER" = "apt-get" ]; then
+        $SUDO apt-get update && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "$dep"
+    elif [ "$PACKAGE_MANAGER" = "brew" ]; then
+        brew install "$dep"
+    fi
+done
+
+# Set variables
+RANGER_REPO="https://github.com/ranger/ranger.git"
+RANGER_DIR="$(pwd)/ranger"
+RANGER_VERSION="1.9.4"
+
+# Clone ranger repo with specific tag
+if [ -d "$RANGER_DIR" ]; then
+    echo "[BUILD_RANGER] Removing existing ranger repository."
+    rm -rf "$RANGER_DIR"
+fi
+echo "[BUILD_RANGER] Cloning ranger repository with tag v$RANGER_VERSION."
+git clone --branch "v$RANGER_VERSION" "$RANGER_REPO" "$RANGER_DIR" --depth 1 
+cd "$RANGER_DIR"
+
+echo "[BUILD_RANGER] Building ranger."
+python3 setup.py install --user
+
+if [ "$PACKAGE_MODE" = "targz" ]; then
+    echo "[BUILD_RANGER] Packaging ranger as tar.gz release."
+    # Create staging directory for installation
+    STAGING_DIR="$(pwd)/release_staging"
+    rm -rf "$STAGING_DIR"
+    mkdir -p "$STAGING_DIR"
+    # Install to staging directory (files go under STAGING_DIR/usr/local)
+    python3 setup.py install --root="$STAGING_DIR" --optimize=1
+    # Create package directory with desired top-level folder structure
+    PKG_DIR="$(pwd)/$ARCH_DIR"
+    rm -rf "$PKG_DIR"
+    mkdir -p "$PKG_DIR"
+    # Move installed files so that they appear under $ARCH_DIR/
+    mv "$STAGING_DIR/usr/local/"* "$PKG_DIR/"
+    TAR_NAME="ranger_release_${RANGER_VERSION}_${ARCH}.tar.gz"
+    # Create tar.gz with top-level folder $ARCH_DIR and the version included
+    tar -czvf "$(pwd)/../$TAR_NAME" -C "$(pwd)" "$ARCH_DIR"
+    echo "[BUILD_RANGER] Packaged ranger as ${TAR_NAME}."
+else
+    echo "[BUILD_RANGER] Installing ranger."
+    $SUDO make install
+fi
+
+echo "[BUILD_RANGER] Ranger process completed."

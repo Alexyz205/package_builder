@@ -1,0 +1,89 @@
+#!/bin/bash
+set -e
+
+# Parse optional argument
+PACKAGE_MODE=install
+if [ "$1" == "--targz" ]; then
+    PACKAGE_MODE=targz
+fi
+
+# Detect system architecture
+ARCH=$(uname -m)
+if [ "$ARCH" == "x86_64" ]; then
+    ARCH_DIR="nvim-linux-x64"
+elif [ "$ARCH" == "aarch64" ]; then
+    ARCH_DIR="nvim-linux-arm64"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+# Check package manager
+if command -v apt-get &> /dev/null; then
+    PACKAGE_MANAGER="apt-get"
+elif command -v brew &> /dev/null; then
+    PACKAGE_MANAGER="brew"
+else
+    echo "No supported package manager found. Please install required dependencies manually."
+    exit 1
+fi
+
+# Check for sudo.
+if command -v sudo &> /dev/null; then
+    SUDO="sudo"
+else
+    SUDO=""
+fi
+
+dependencies=(curl tar git cmake ninja-build make gettext)
+echo "Installing dependencies..."
+for dep in "${dependencies[@]}"; do
+    echo "Installing $dep..."
+    if [ "$PACKAGE_MANAGER" = "apt-get" ]; then
+        $SUDO apt-get update && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "$dep"
+    elif [ "$PACKAGE_MANAGER" = "brew" ]; then
+        brew install "$dep"
+    fi
+done
+
+# Set variables
+NVIM_REPO="https://github.com/neovim/neovim.git"
+NVIM_DIR="$(pwd)/neovim"
+NVIM_VERSION="0.10.4"
+
+# Clone neovim repo with specific tag
+if [ -d "$NVIM_DIR" ]; then
+    echo "[BUILD_NVIM] Removing existing neovim repository."
+    rm -rf "$NVIM_DIR"
+fi
+echo "[BUILD_NVIM] Cloning neovim repository with tag v$NVIM_VERSION."
+git clone --branch "v$NVIM_VERSION" "$NVIM_REPO" "$NVIM_DIR" --depth 1 
+cd "$NVIM_DIR"
+
+echo "[BUILD_NVIM] Building neovim."
+make CMAKE_BUILD_TYPE=Release
+
+if [ "$PACKAGE_MODE" = "targz" ]; then
+    echo "[BUILD_NVIM] Packaging neovim as tar.gz release."
+    # Create staging directory for installation
+    STAGING_DIR="$(pwd)/release_staging"
+    rm -rf "$STAGING_DIR"
+    mkdir -p "$STAGING_DIR"
+    # Install to staging directory (files go under STAGING_DIR/usr/local)
+    make install DESTDIR="$STAGING_DIR"
+    # Create package directory with desired top-level folder structure
+    PKG_DIR="$(pwd)/$ARCH_DIR"
+    rm -rf "$PKG_DIR"
+    mkdir -p "$PKG_DIR"
+    # Move installed files so that they appear under $ARCH_DIR/
+    mv "$STAGING_DIR/usr/local/"* "$PKG_DIR/"
+    TAR_NAME="nvim_release_${NVIM_VERSION}_${ARCH}.tar.gz"
+    # Create tar.gz with top-level folder $ARCH_DIR and the version included
+    tar -czvf "$(pwd)/../$TAR_NAME" -C "$(pwd)" "$ARCH_DIR"
+    echo "[BUILD_NVIM] Packaged neovim as ${TAR_NAME}."
+else
+    echo "[BUILD_NVIM] Installing neovim."
+    $SUDO make install
+fi
+
+echo "[BUILD_NVIM] Neovim process completed."
