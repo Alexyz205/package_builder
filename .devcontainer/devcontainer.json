@@ -1,0 +1,4 @@
+{
+    "name": "Ubuntu Development Container",
+    "image": "ubuntu:24.04"
+}
