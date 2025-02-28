@@ -1,0 +1,90 @@
+!/bin/bash
+set -e
+
+# Parse optional argument
+PACKAGE_MODE=install
+if [ "$1" == "--targz" ]; then
+    PACKAGE_MODE=targz
+fi
+
+# Detect system architecture
+ARCH=$(uname -m)
+if [ "$ARCH" == "x86_64" ]; then
+    ARCH_DIR="tmux-linux-x64"
+elif [ "$ARCH" == "aarch64" ]; then
+    ARCH_DIR="tmux-linux-arm64"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+# Check package manager
+if command -v apt-get &> /dev/null; then
+    PACKAGE_MANAGER="apt-get"
+elif command -v brew &> /dev/null; then
+    PACKAGE_MANAGER="brew"
+else
+    echo "No supported package manager found. Please install required dependencies manually."
+    exit 1
+fi
+
+# Check for sudo.
+if command -v sudo &> /dev/null; then
+    SUDO="sudo"
+else
+    SUDO=""
+fi
+
+dependencies=(curl tar git automake pkg-config libevent-dev libncurses5-dev)
+echo "Installing dependencies..."
+for dep in "${dependencies[@]}"; do
+    echo "Installing $dep..."
+    if [ "$PACKAGE_MANAGER" = "apt-get" ]; then
+        $SUDO apt-get update && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "$dep"
+    elif [ "$PACKAGE_MANAGER" = "brew" ]; then
+        brew install "$dep"
+    fi
+done
+
+# Set variables
+TMUX_REPO="https://github.com/tmux/tmux.git"
+TMUX_DIR="$(pwd)/tmux"
+TMUX_VERSION="3.5"
+
+# Clone tmux repo with specific tag
+if [ -d "$TMUX_DIR" ]; then
+    echo "[BUILD_TMUX] Removing existing tmux repository."
+    rm -rf "$TMUX_DIR"
+fi
+echo "[BUILD_TMUX] Cloning tmux repository with tag $TMUX_VERSION."
+git clone --branch "$TMUX_VERSION" "$TMUX_REPO" "$TMUX_DIR" --depth 1 
+cd "$TMUX_DIR"
+
+echo "[BUILD_TMUX] Building tmux."
+sh autogen.sh
+./configure && make
+
+if [ "$PACKAGE_MODE" = "targz" ]; then
+    echo "[BUILD_TMUX] Packaging tmux as tar.gz release."
+    # Create staging directory for installation
+    STAGING_DIR="$(pwd)/release_staging"
+    rm -rf "$STAGING_DIR"
+    mkdir -p "$STAGING_DIR"
+    # Install to staging directory (files go under STAGING_DIR/usr/local)
+    make install DESTDIR="$STAGING_DIR"
+    # Create package directory with desired top-level folder structure
+    PKG_DIR="$(pwd)/$ARCH_DIR"
+    rm -rf "$PKG_DIR"
+    mkdir -p "$PKG_DIR"
+    # Move installed files so that they appear under $ARCH_DIR/
+    mv "$STAGING_DIR/usr/local/"* "$PKG_DIR/"
+    TAR_NAME="tmux_release_${TMUX_VERSION}_${ARCH}.tar.gz"
+    # Create tar.gz with top-level folder $ARCH_DIR and the version included
+    tar -czvf "$(pwd)/../$TAR_NAME" -C "$(pwd)" "$ARCH_DIR"
+    echo "[BUILD_TMUX] Packaged tmux as ${TAR_NAME}."
+else
+    echo "[BUILD_TMUX] Installing tmux."
+    $SUDO make install
+fi
+
+echo "[BUILD_TMUX] Tmux process completed."

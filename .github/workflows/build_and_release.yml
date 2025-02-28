@@ -65,9 +65,36 @@ jobs:
           path: ranger_release_*_${{ matrix.arch }}.tar.gz
           if-no-files-found: error
 
+  build_tmux:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-24.04
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Build and package Tmux
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          ubuntu:20.04 /bin/bash -c "./install_tmux --targz"
+
+      - name: Upload Tmux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-package-${{ matrix.arch }}
+          path: tmux_release_*_${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build_nvim, build_ranger]
+    needs: [build_nvim, build_ranger, build_tmux]
     runs-on: ubuntu-latest
     steps:
       - name: Download Neovim packages (x86_64)
@@ -90,6 +117,16 @@ jobs:
         with:
           name: ranger-package-aarch64
           path: ./aarch64/
+      - name: Download Tmux packages (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: tmux-package-x86_64
+          path: ./x86_64/
+      - name: Download Tmux packages (aarch64)
+        uses: actions/download-artifact@v4
+        with:
+          name: tmux-package-aarch64
+          path: ./aarch64/
 
       - name: Create GitHub Release
         id: create_release
@@ -100,5 +137,7 @@ jobs:
             ./aarch64/nvim_release_*_aarch64.tar.gz
             ./x86_64/ranger_release_*_x86_64.tar.gz
             ./aarch64/ranger_release_*_aarch64.tar.gz
+            ./x86_64/tmux_release_*_x86_64.tar.gz
+            ./aarch64/tmux_release_*_aarch64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
