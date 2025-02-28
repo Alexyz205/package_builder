@@ -35,7 +35,7 @@ else
     SUDO=""
 fi
 
-dependencies=(curl tar git automake pkg-config libevent-dev libncurses5-dev)
+dependencies=(curl tar git automake pkg-config libevent-dev libncurses5-dev build-essential bison)
 echo "Installing dependencies..."
 for dep in "${dependencies[@]}"; do
     echo "Installing $dep..."
