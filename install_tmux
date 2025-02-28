@@ -1,4 +1,4 @@
-!/bin/bash
+#!/bin/bash
 set -e
 
 # Parse optional argument
@@ -11,8 +11,10 @@ fi
 ARCH=$(uname -m)
 if [ "$ARCH" == "x86_64" ]; then
     ARCH_DIR="tmux-linux-x64"
+    LIBEVENT_PATH="/usr/lib/x86_64-linux-gnu/libevent_*"
 elif [ "$ARCH" == "aarch64" ]; then
     ARCH_DIR="tmux-linux-arm64"
+    LIBEVENT_PATH="/lib/aarch64-linux-gnu/libevent_*"
 else
     echo "Unsupported architecture: $ARCH"
     exit 1
@@ -72,6 +74,9 @@ if [ "$PACKAGE_MODE" = "targz" ]; then
     mkdir -p "$STAGING_DIR"
     # Install to staging directory (files go under STAGING_DIR/usr/local)
     make install DESTDIR="$STAGING_DIR"
+    # Include libevent in the package
+    mkdir -p "$STAGING_DIR/usr/local/lib"
+    cp $LIBEVENT_PATH "$STAGING_DIR/usr/local/lib/"
     # Create package directory with desired top-level folder structure
     PKG_DIR="$(pwd)/$ARCH_DIR"
     rm -rf "$PKG_DIR"
